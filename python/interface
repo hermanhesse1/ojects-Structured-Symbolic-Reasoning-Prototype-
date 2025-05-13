@@ -1,0 +1,127 @@
+# File: python/interface.py
+# Description: Python module using ctypes to interface with the Haskell shared library.
+
+import ctypes
+import os
+import platform # To determine OS for library extension
+
+# --- Library Loading ---
+
+def get_haskell_library_path() -> str:
+    """
+    Determines the path to the compiled Haskell shared library.
+    Assumes a project structure where this script is in 'python/'
+    and the Haskell library is in a sibling 'haskell/' directory.
+    """
+    # Determine the correct library file extension based on the OS
+    system = platform.system()
+    if system == "Windows":
+        lib_extension = ".dll"
+    elif system == "Darwin":  # macOS
+        lib_extension = ".dylib"
+    else:  # Linux and other UNIX-like systems
+        lib_extension = ".so"
+
+    lib_name = 'liblogic' + lib_extension
+
+    # Get the directory containing this script (e.g., .../symbolica-prototype/python/)
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up one level to the project root (e.g., .../symbolica-prototype/)
+    project_root = os.path.dirname(current_script_dir)
+    # Construct the path to the Haskell directory
+    haskell_dir = os.path.join(project_root, 'haskell')
+    # Construct the full path to the library
+    full_lib_path = os.path.join(haskell_dir, lib_name)
+
+    return full_lib_path
+
+# Global variable to hold the loaded library instance
+haskell_lib = None
+library_load_error = None
+
+try:
+    lib_path = get_haskell_library_path()
+    if not os.path.exists(lib_path):
+        raise OSError(f"Library file not found at {lib_path}. Please compile the Haskell code first (e.g., run 'make' in the 'haskell' directory).")
+    haskell_lib = ctypes.CDLL(lib_path)
+except OSError as e:
+    library_load_error = e
+    # We'll print the error when functions are called or if this script is run directly.
+
+# --- Function Definitions from Haskell Library ---
+
+if haskell_lib:
+    # Define argument and result types for the 'count_positives' Haskell function.
+    # Haskell FFI: foreign export ccall count_positives :: Ptr CInt -> CInt -> IO CInt
+    # C equivalent:  int count_positives(int* array, int length);
+    # ctypes.c_int typically corresponds to Haskell's CInt (a 32-bit signed integer).
+    haskell_lib.count_positives.argtypes = (ctypes.POINTER(ctypes.c_int), ctypes.c_int)
+    haskell_lib.count_positives.restype = ctypes.c_int
+else:
+    # If the library isn't loaded, functions relying on it will raise an error.
+    pass
+
+# --- Python Wrapper Functions ---
+
+def count_positives_haskell(data_list: list[int]) -> int:
+    """
+    Python wrapper to call the 'count_positives' function from the Haskell library.
+
+    Args:
+        data_list: A list of Python integers.
+
+    Returns:
+        The count of positive integers in the list, as computed by the Haskell function.
+
+    Raises:
+        RuntimeError: If the Haskell library was not loaded successfully.
+        TypeError: If the input is not a list of integers.
+    """
+    if not haskell_lib:
+        error_message = f"Haskell library not loaded. Cannot call 'count_positives'. "
+        if library_load_error:
+            error_message += f"Original error: {library_load_error}"
+        else:
+            error_message += f"Attempted to load from: {get_haskell_library_path()}"
+        raise RuntimeError(error_message)
+
+    if not isinstance(data_list, list) or not all(isinstance(x, int) for x in data_list):
+        raise TypeError("Input must be a list of integers.")
+
+    n = len(data_list)
+    # Create a C-compatible array of integers from the Python list.
+    # (ctypes.c_int * n) creates an array type for n c_int elements.
+    # (*data_list) unpacks the Python list into arguments for the array constructor.
+    c_array = (ctypes.c_int * n)(*data_list)
+
+    # Call the Haskell function.
+    # The second argument (length) must also be a ctypes.c_int.
+    result = haskell_lib.count_positives(c_array, ctypes.c_int(n))
+    return result
+
+# --- Main execution block for testing ---
+if __name__ == '__main__':
+    print("--- Haskell Library Interface (interface.py) ---")
+    if haskell_lib:
+        print(f"Haskell library loaded successfully from: {get_haskell_library_path()}")
+        print("Attempting to call 'count_positives_haskell' with sample data...")
+        sample_data = [-2, -1, 0, 1, 2, 3, -4, 5, 0, 10] # Expected positives: 5
+        try:
+            count = count_positives_haskell(sample_data)
+            print(f"Sample data: {sample_data}")
+            print(f"Count of positives (from Haskell): {count}")
+            if count == 5:
+                print("Test: PASSED")
+            else:
+                print(f"Test: FAILED (Expected 5, got {count})")
+        except RuntimeError as e:
+            print(f"Runtime error during example usage: {e}")
+        except TypeError as e:
+            print(f"Type error during example usage: {e}")
+    else:
+        print("Haskell library could NOT be loaded.")
+        if library_load_error:
+            print(f"Error details: {library_load_error}")
+        print(f"Please ensure the Haskell library (e.g., liblogic.so/dylib/dll) is compiled using 'make' in the 'haskell' directory and is accessible at the expected path: {get_haskell_library_path()}")
+
+    print("--- End of interface.py execution ---")
