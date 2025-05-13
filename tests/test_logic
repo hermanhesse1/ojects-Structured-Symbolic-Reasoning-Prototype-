@@ -1,0 +1,129 @@
+# File: tests/test_logic.py
+# Description: Unit tests for the Python wrapper around the Haskell FFI function.
+
+import unittest
+import sys
+import os
+
+# --- Path Setup ---
+# Add the parent directory of 'tests/' (which should be the project root)
+# to the Python path. This allows importing 'interface' from the 'python'
+# subdirectory when running tests from the project root or the 'tests' directory.
+
+# Get the directory containing this test script (e.g., .../symbolica-prototype/tests/)
+current_test_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to the project root (e.g., .../symbolica-prototype/)
+project_root = os.path.dirname(current_test_dir)
+# Construct the path to the 'python' directory
+python_module_dir = os.path.join(project_root, 'python')
+
+# Add the 'python' directory to sys.path if it's not already there
+if python_module_dir not in sys.path:
+    sys.path.insert(0, python_module_dir)
+
+# --- Import the function to be tested ---
+try:
+    # Attempt to import the specific function and library status
+    from interface import count_positives_haskell, haskell_lib, library_load_error
+except ImportError as e:
+    print(f"Error: Could not import 'count_positives_haskell' from 'interface.py'. {e}")
+    print(f"Ensure 'interface.py' is in the '{python_module_dir}' directory.")
+    print("Tests will likely fail or be skipped.")
+    # Define dummy versions so the test class can be defined, though tests will fail/skip.
+    haskell_lib = None
+    library_load_error = e # Store the error
+    def count_positives_haskell(data_list: list[int]) -> int:
+        raise ImportError(f"Failed to import interface.py: {library_load_error}")
+
+# --- Test Class ---
+
+class TestHaskellLogicFFI(unittest.TestCase):
+    """
+    Test suite for the 'count_positives_haskell' function, which calls
+    the Haskell core logic via FFI.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class-level setup. Checks if the Haskell library was loaded.
+        If not, skips all tests in this class.
+        """
+        if not haskell_lib:
+            # Construct a detailed error message for skipping
+            skip_message = "Haskell library not loaded. Skipping all FFI tests."
+            if library_load_error: # If interface.py captured an error
+                skip_message += f" Original error: {library_load_error}"
+            else: # If haskell_lib is None for other reasons (e.g. import failed before load attempt)
+                skip_message += " Check interface.py for loading issues or import errors."
+            raise unittest.SkipTest(skip_message)
+        print("\nHaskell library loaded. Running FFI tests...")
+
+
+    def test_empty_list(self):
+        """Test with an empty list. Expected count: 0."""
+        self.assertEqual(count_positives_haskell([]), 0, "Empty list should yield 0 positives.")
+
+    def test_all_positives(self):
+        """Test with a list containing only positive numbers."""
+        data = [1, 2, 3, 4, 5, 100, 77]
+        self.assertEqual(count_positives_haskell(data), len(data), "All positives list count mismatch.")
+
+    def test_all_negatives(self):
+        """Test with a list containing only negative numbers. Expected count: 0."""
+        data = [-1, -2, -3, -10, -50]
+        self.assertEqual(count_positives_haskell(data), 0, "All negatives list should yield 0 positives.")
+
+    def test_all_zeros(self):
+        """Test with a list containing only zeros. Expected count: 0 (zero is not positive)."""
+        data = [0, 0, 0, 0]
+        self.assertEqual(count_positives_haskell(data), 0, "All zeros list should yield 0 positives.")
+
+    def test_mixed_numbers(self):
+        """Test with a mixed list of positive, negative, and zero values."""
+        data = [-1, 0, 1, -2, 2, 0, 3, -10, 5] # Positives: 1, 2, 3, 5 (count = 4)
+        self.assertEqual(count_positives_haskell(data), 4, "Mixed numbers list count mismatch.")
+
+    def test_single_positive_element(self):
+        """Test with a list containing a single positive number."""
+        self.assertEqual(count_positives_haskell([42]), 1, "Single positive element test failed.")
+
+    def test_single_negative_element(self):
+        """Test with a list containing a single negative number."""
+        self.assertEqual(count_positives_haskell([-42]), 0, "Single negative element test failed.")
+
+    def test_single_zero_element(self):
+        """Test with a list containing a single zero."""
+        self.assertEqual(count_positives_haskell([0]), 0, "Single zero element test failed.")
+
+    def test_large_list_alternating(self):
+        """Test with a larger list of alternating positive and negative numbers."""
+        # Generates [-1, 1, -2, 2, ..., -N, N] for N up to 500
+        # For N=500, this is 1000 elements.
+        # Positive numbers are 1, 2, ..., 500. So, 500 positive numbers.
+        data_size = 500
+        data = []
+        for i in range(1, data_size + 1):
+            data.append(-i)
+            data.append(i)
+        expected_count = data_size
+        self.assertEqual(count_positives_haskell(data), expected_count, "Large alternating list count mismatch.")
+
+    def test_boundary_values_around_zero(self):
+        """Test with values close to zero."""
+        data = [-1, 0, 1]
+        self.assertEqual(count_positives_haskell(data), 1, "Boundary values around zero test failed.")
+
+    # Example of how you might test for error handling if the wrapper was designed for it
+    # def test_invalid_input_type(self):
+    #     """Test with invalid input type (e.g., list of strings)."""
+    #     with self.assertRaises(TypeError): # Assuming your wrapper raises TypeError
+    #         count_positives_haskell(["a", "b", "c"])
+
+
+if __name__ == '__main__':
+    print("--- Running Unit Tests for Haskell FFI Logic (test_logic.py) ---")
+    # This allows running the tests directly from this file.
+    # e.g., python tests/test_logic.py
+    # It's often better to run tests using `python -m unittest discover` from the project root.
+    unittest.main(verbosity=2) # verbosity=2 provides more detailed output
