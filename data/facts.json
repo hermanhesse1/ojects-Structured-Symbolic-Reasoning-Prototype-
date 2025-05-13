@@ -1,0 +1,54 @@
+{
+  "description": "A toy dataset of 'facts'. For the current count_positives example, this file is not directly used by the Haskell/Python code. It serves as a placeholder for how more complex symbolic reasoning tasks might structure their input data or rules.",
+  "notes": [
+    "In a real symbolic engine, facts might be represented as predicates, relations, or logical statements.",
+    "Rules would define how new facts can be inferred from existing ones."
+  ],
+  "sample_rules_conceptual": [
+    {
+      "id": "R001",
+      "name": "Grandparent Rule",
+      "if_all": [
+        "parent(PersonA, PersonB)",
+        "parent(PersonB, PersonC)"
+      ],
+      "then": "grandparent(PersonA, PersonC)",
+      "comment": "If A is a parent of B, and B is a parent of C, then A is a grandparent of C."
+    },
+    {
+      "id": "R002",
+      "name": "Sibling Rule",
+      "if_all": [
+        "parent(ParentZ, ChildX)",
+        "parent(ParentZ, ChildY)",
+        "ChildX != ChildY"
+      ],
+      "then": "sibling(ChildX, ChildY)",
+      "comment": "If X and Y share a common parent Z, and X is not Y, then X and Y are siblings."
+    }
+  ],
+  "sample_data_points_conceptual": [
+    {
+      "id": "D001",
+      "type": "integer_list_for_counting_prototype",
+      "values": [-5, 10, 0, -2, 8, 1, 42, -100, 7],
+      "purpose": "Used by the current count_positives FFI example."
+    },
+    {
+      "id": "D002",
+      "type": "relational_fact_set",
+      "statements": [
+        "parent(john, mary)",
+        "parent(mary, sue)",
+        "parent(john, peter)",
+        "parent(alice, mary)"
+      ],
+      "purpose": "Example facts for a more advanced symbolic reasoning engine."
+    }
+  ],
+  "future_ideas_for_data": [
+    "Knowledge graphs in RDF or Property Graph format.",
+    "Logical formulas in SMT-LIB or Prolog-like syntax.",
+    "Datasets for specific reasoning tasks (e.g., bAbI tasks)."
+  ]
+}
