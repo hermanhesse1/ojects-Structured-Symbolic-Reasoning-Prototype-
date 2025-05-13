@@ -1,1 +1,1 @@
-# ojects-Structured-Symbolic-Reasoning-Prototype-
+# ojects-Structured-Symbolic-Reasoning-Prototype: foundational approach to integrating Haskell for core symbolic logic processing with Python for high-level orchestration and data pipelining. It features a simple Haskell module compiled into a shared library, callable from Python using ctypes via a Foreign Function Interface 
