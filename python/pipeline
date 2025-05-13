@@ -1,0 +1,171 @@
+# File: python/pipeline.py
+# Description: Python script to generate data, invoke Haskell logic via FFI,
+#              compare with pure Python logic, and benchmark performance.
+
+import random
+import time
+import sys # For sys.exit if library fails critically
+
+# Attempt to import the Haskell interface function and library status.
+# The interface.py file should be in the same directory or accessible via PYTHONPATH.
+try:
+    from interface import count_positives_haskell, haskell_lib, library_load_error
+except ImportError as e:
+    print(f"Critical Error: Failed to import from 'interface.py'. {e}")
+    print("Please ensure 'interface.py' is in the same directory as 'pipeline.py'.")
+    sys.exit(1) # Exit if the crucial interface module cannot be imported.
+
+# --- Data Generation ---
+
+def generate_dataset(size: int, min_val: int = -100, max_val: int = 100) -> list[int]:
+    """
+    Generates a list of random integers.
+
+    Args:
+        size: The number of integers to generate.
+        min_val: The minimum possible value for an integer.
+        max_val: The maximum possible value for an integer.
+
+    Returns:
+        A list of random integers.
+    """
+    if size < 0:
+        raise ValueError("Dataset size cannot be negative.")
+    return [random.randint(min_val, max_val) for _ in range(size)]
+
+# --- Pure Python Logic (Baseline) ---
+
+def count_positives_python(data_list: list[int]) -> int:
+    """
+    Counts positive integers in a list using a pure Python implementation.
+    (Zero is not considered positive).
+
+    Args:
+        data_list: A list of integers.
+
+    Returns:
+        The count of positive integers.
+    """
+    if not isinstance(data_list, list) or not all(isinstance(x, int) for x in data_list):
+        raise TypeError("Input must be a list of integers.")
+    return len([x for x in data_list if x > 0])
+
+# --- Experiment Orchestration ---
+
+def run_experiment(dataset_size: int = 10000, num_runs: int = 5):
+    """
+    Runs the main experiment:
+    1. Checks if the Haskell library is loaded.
+    2. For a number of runs:
+       a. Generates a dataset.
+       b. Times the pure Python implementation.
+       c. Times the Haskell implementation (via FFI).
+       d. Verifies that the results match.
+    3. Prints a summary of average times and comparison.
+    """
+    print(f"--- Starting Symbolic Reasoning Prototype Experiment ---")
+    print(f"Configuration: Dataset Size = {dataset_size}, Number of Runs = {num_runs}\n")
+
+    if not haskell_lib:
+        print("CRITICAL: Haskell library was not loaded successfully.")
+        if library_load_error:
+            print(f"Details from interface.py: {library_load_error}")
+        print("The Haskell part of the experiment cannot be performed.")
+        print("Please compile the Haskell library (run 'make' in 'haskell/' directory) and resolve any issues in 'interface.py'.")
+        # Optionally, you could still run the Python part for comparison if desired,
+        # but the main purpose of the script is the Haskell integration.
+        # For now, we will indicate that the full experiment cannot proceed.
+        print("--- Experiment Aborted ---")
+        return
+
+    print("Haskell library loaded. Proceeding with the experiment.\n")
+
+    total_python_time = 0.0
+    total_haskell_time = 0.0
+    successful_haskell_runs = 0
+
+    for i in range(num_runs):
+        print(f"--- Run {i + 1}/{num_runs} ---")
+        data = generate_dataset(dataset_size)
+
+        # 1. Python baseline computation and timing
+        try:
+            start_py_time = time.perf_counter() # More precise than time.time()
+            python_count = count_positives_python(data)
+            end_py_time = time.perf_counter()
+            python_duration = end_py_time - start_py_time
+            total_python_time += python_duration
+            print(f"Python (baseline): Found {python_count} positives. Time: {python_duration:.6f} seconds.")
+        except Exception as e:
+            print(f"Error during Python execution: {e}")
+            python_count = -1 # Indicate error
+            python_duration = float('inf')
+
+
+        # 2. Haskell via FFI computation and timing
+        try:
+            start_hs_time = time.perf_counter()
+            haskell_count = count_positives_haskell(data) # Call the wrapper from interface.py
+            end_hs_time = time.perf_counter()
+            haskell_duration = end_hs_time - start_hs_time
+            total_haskell_time += haskell_duration
+            successful_haskell_runs += 1
+            print(f"Haskell (via FFI): Found {haskell_count} positives. Time: {haskell_duration:.6f} seconds.")
+        except RuntimeError as e: # Catch errors from FFI call or library load
+            print(f"Error during Haskell execution: {e}")
+            haskell_count = -2 # Indicate error
+            haskell_duration = float('inf')
+        except TypeError as e: # Catch type errors if data_list is wrong
+            print(f"Type error calling Haskell function: {e}")
+            haskell_count = -3
+            haskell_duration = float('inf')
+
+
+        # 3. Verification (if both ran successfully)
+        if python_count >= 0 and haskell_count >= 0:
+            if python_count == haskell_count:
+                print("Verification: PASSED (Python and Haskell counts match)")
+            else:
+                print(f"Verification: FAILED! Python count: {python_count}, Haskell count: {haskell_count}")
+        else:
+            print("Verification: SKIPPED due to errors in execution.")
+        print("-" * 30 + "\n")
+
+    # --- Summary ---
+    print("\n--- Experiment Summary ---")
+    if num_runs > 0:
+        avg_python_time = total_python_time / num_runs
+        print(f"Average Python time over {num_runs} runs: {avg_python_time:.6f} seconds.")
+
+        if successful_haskell_runs > 0:
+            avg_haskell_time = total_haskell_time / successful_haskell_runs
+            print(f"Average Haskell time over {successful_haskell_runs} successful runs: {avg_haskell_time:.6f} seconds.")
+
+            if avg_python_time > 0 and avg_haskell_time > 0 and avg_haskell_time != float('inf'):
+                # Compare speeds
+                if avg_haskell_time < avg_python_time:
+                    ratio = avg_python_time / avg_haskell_time
+                    print(f"Haskell was approximately {ratio:.2f}x faster than Python for this task.")
+                elif avg_python_time < avg_haskell_time:
+                    ratio = avg_haskell_time / avg_python_time
+                    print(f"Python was approximately {ratio:.2f}x faster than Haskell for this task (check FFI overhead or task complexity).")
+                else:
+                    print("Python and Haskell had similar average execution times.")
+            elif avg_haskell_time == float('inf'):
+                 print("Could not reliably compare Haskell speed due to errors in all Haskell runs.")
+
+        else:
+            print("Haskell part did not run successfully in any trial. Cannot calculate average Haskell time or compare speeds.")
+    else:
+        print("No runs were performed.")
+
+    print("--- End of Experiment ---")
+
+if __name__ == "__main__":
+    # Configuration for the experiment
+    # For very small dataset sizes, FFI overhead might dominate.
+    # Larger sizes will better show the performance of the core Haskell logic.
+    DATASET_SIZE = 1000000  # Number of integers in each list
+    NUMBER_OF_RUNS = 10     # Number of times to run the comparison
+
+    run_experiment(dataset_size=DATASET_SIZE, num_runs=NUMBER_OF_RUNS)
